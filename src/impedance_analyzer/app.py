@@ -17,8 +17,7 @@ from nicegui import run, ui
 from nicegui.events import UploadEventArguments
 
 
-DEFAULT_IP = "10.59.133.242"
-E0 = 8.85418782e-12
+DEFAULT_IP = os.environ.get("DEFAULT_INSTRUMENT_IP", "192.0.2.10")
 favicon_path = Path(__file__).with_name("favicon.ico")
 
 
@@ -112,8 +111,6 @@ def _resource_candidates(address: str) -> list[str]:
 class SampleInfo:
     sample_id: str = "sample"
     notes: str = ""
-    diameter_mm: float = 1.0
-    thickness_mm: float = 1.0
 
 
 @dataclass
@@ -139,8 +136,6 @@ class Measurement:
     zi_ohm: list[float] = field(default_factory=list)
     resistance_ohm: list[float] = field(default_factory=list)
     capacitance_f: list[float] = field(default_factory=list)
-    er: list[float] = field(default_factory=list)
-    ei: list[float] = field(default_factory=list)
     elapsed_s: float | None = None
 
     @property
@@ -165,17 +160,12 @@ def build_measurement(
     impedance = np.asarray(impedance_ohm[:count], dtype=float)
     phase = np.asarray(phase_deg[:count], dtype=float)
     phase_rad = np.deg2rad(phase)
-    thickness_m = sample.thickness_mm * 1e-3
-    diameter_m = sample.diameter_mm * 1e-3
-    area_m2 = math.pi * diameter_m**2 / 4
 
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         zr = impedance * np.cos(phase_rad)
         zi = -impedance * np.sin(phase_rad)
         resistance = impedance / np.cos(phase_rad)
         capacitance = zi / (zr * freq * resistance * 2 * math.pi)
-        er = (capacitance * thickness_m) / (E0 * area_m2)
-        ei = er * np.tan(np.deg2rad(90 + phase))
 
     return Measurement(
         sample=sample,
@@ -187,8 +177,6 @@ def build_measurement(
         zi_ohm=_safe_list(zi),
         resistance_ohm=_safe_list(resistance),
         capacitance_f=_safe_list(capacitance),
-        er=_safe_list(er),
-        ei=_safe_list(ei),
         elapsed_s=elapsed_s,
     )
 
@@ -248,15 +236,7 @@ def parse_impedspec_text(text: str) -> Measurement:
     sample = SampleInfo(
         sample_id=metadata.get("sample", metadata.get("sample_id", "imported")).strip(),
         notes=metadata.get("notes", ""),
-        diameter_mm=_float_metadata(metadata, "d", _float_metadata(metadata, "diameter_mm", 1.0)),
-        thickness_mm=_float_metadata(metadata, "d(mm)", _float_metadata(metadata, "thickness_mm", 1.0)),
     )
-    # impedspec uses #d for thickness and #D for diameter; normalize after lowercase collision handling.
-    for line in text.splitlines():
-        if line.startswith("#D"):
-            sample.diameter_mm = float(line.replace("=", " ").split()[-1])
-        elif line.startswith("#d"):
-            sample.thickness_mm = float(line.replace("=", " ").split()[-1])
 
     settings = SweepSettings(
         start_hz=_float_metadata(metadata, "freq_start", float(data[0, 0])),
@@ -284,8 +264,6 @@ def format_impedspec_text(measurement: Measurement) -> str:
     elapsed = "" if measurement.elapsed_s is None else f"{measurement.elapsed_s:.6g}"
     lines = [
         f"#sample\t {sample.sample_id}",
-        f"#d(mm)\t {sample.thickness_mm}",
-        f"#D(mm)\t {sample.diameter_mm}",
         f"#freq_start\t {settings.start_hz:.12g}",
         f"#freq_stop\t {settings.stop_hz:.12g}",
         f"#sweep\t {settings.sweep_type}",
@@ -296,14 +274,16 @@ def format_impedspec_text(measurement: Measurement) -> str:
         f"#measurements_per_point\t {settings.measurements_per_point}",
         f"#notes\t {sample.notes}",
         f"#time_of_analysis\t {elapsed}",
-        "#Freq(Hz)\t Z(ohms)\t Phase(degrees)\t er_Re\t er_Im",
+        "#Freq(Hz)\t Z(ohms)\t Phase(degrees)\t Zr(ohms)\t Zi(ohms)\t R(ohms)\t C(F)",
     ]
     for row in zip(
         measurement.frequency_hz,
         measurement.impedance_ohm,
         measurement.phase_deg,
-        measurement.er,
-        measurement.ei,
+        measurement.zr_ohm,
+        measurement.zi_ohm,
+        measurement.resistance_ohm,
+        measurement.capacitance_f,
         strict=False,
     ):
         lines.append("\t".join(f"{value:.4e}" for value in row))
@@ -525,8 +505,6 @@ def _dual_axis_figure(
 def figure_for(measurement: Measurement, mode: str) -> go.Figure:
     if not measurement.has_data:
         return _dual_axis_figure(measurement, [], "|Z|", "Impedance (Ohm)", [], "Phase", "Phase (deg)", y1_log=True)
-    if mode == "Permittivity":
-        return _dual_axis_figure(measurement, measurement.er, "epsilon'", "Real Permittivity", measurement.ei, "epsilon''", "Imaginary Permittivity")
     if mode == "R + C":
         return _dual_axis_figure(measurement, measurement.resistance_ohm, "R", "Resistance (Ohm)", measurement.capacitance_f, "C", "Capacitance (F)", y1_log=True, y2_log=True)
     if mode == "Zr vs Zi":
@@ -558,20 +536,24 @@ def table_rows(measurement: Measurement) -> list[dict[str, str]]:
             measurement.frequency_hz,
             measurement.impedance_ohm,
             measurement.phase_deg,
-            measurement.er,
-            measurement.ei,
+            measurement.zr_ohm,
+            measurement.zi_ohm,
+            measurement.resistance_ohm,
+            measurement.capacitance_f,
             strict=False,
         )
     ):
-        freq, impedance, phase, er, ei = values
+        freq, impedance, phase, zr, zi, resistance, capacitance = values
         rows.append(
             {
                 "id": str(index),
                 "frequency": f"{freq:.6g}",
                 "impedance": f"{impedance:.6g}",
                 "phase": f"{phase:.6g}",
-                "er": f"{er:.6g}",
-                "ei": f"{ei:.6g}",
+                "zr": f"{zr:.6g}",
+                "zi": f"{zi:.6g}",
+                "resistance": f"{resistance:.6g}",
+                "capacitance": f"{capacitance:.6g}",
             }
         )
     return rows
@@ -680,8 +662,6 @@ def main_page() -> None:
         return SampleInfo(
             sample_id=str(sample_id_input.value or "sample").strip(),
             notes=str(notes_input.value or "").strip(),
-            diameter_mm=float(diameter_input.value or 1.0),
-            thickness_mm=float(thickness_input.value or 1.0),
         )
 
     def read_settings() -> SweepSettings:
@@ -699,8 +679,6 @@ def main_page() -> None:
     def set_inputs(measurement: Measurement) -> None:
         sample_id_input.value = measurement.sample.sample_id
         notes_input.value = measurement.sample.notes
-        diameter_input.value = measurement.sample.diameter_mm
-        thickness_input.value = measurement.sample.thickness_mm
         start_input.value = measurement.settings.start_hz
         stop_input.value = measurement.settings.stop_hz
         points_input.value = measurement.settings.points
@@ -837,9 +815,6 @@ def main_page() -> None:
         if not sample.sample_id:
             ui.notify("Enter a sample ID.", type="warning")
             return
-        if sample.diameter_mm <= 0 or sample.thickness_mm <= 0:
-            ui.notify("Diameter and thickness must be positive.", type="warning")
-            return
         if settings.start_hz <= 0 or settings.stop_hz <= settings.start_hz or settings.points < 2:
             ui.notify("Use a positive start, a higher stop, and at least 2 points.", type="warning")
             return
@@ -918,9 +893,6 @@ def main_page() -> None:
                     ui.label("Sample").classes("text-base font-medium")
                     sample_id_input = ui.input("Sample ID", value="sample").classes("w-full")
                     notes_input = ui.textarea("Notes").props("rows=2").classes("w-full")
-                    with ui.row().classes("w-full gap-2"):
-                        diameter_input = ui.number("Diameter (mm)", value=1.0, min=0.000001, format="%.6g").classes("grow")
-                        thickness_input = ui.number("Thickness (mm)", value=1.0, min=0.000001, format="%.6g").classes("grow")
 
                     ui.separator()
                     ui.label("Sweep").classes("text-base font-medium")
@@ -947,7 +919,7 @@ def main_page() -> None:
         with ui.column().classes("main-panel grow h-full p-4 gap-3 overflow-hidden"):
             with ui.row().classes("top-toolbar w-full items-center justify-between gap-3"):
                 with ui.row().classes("items-center gap-2"):
-                    plot_mode = ui.toggle(["|Z| + Phase", "Permittivity", "R + C", "Zr vs Zi"], value="|Z| + Phase", on_change=lambda e: select_plot_mode(e.value))
+                    plot_mode = ui.toggle(["|Z| + Phase", "R + C", "Zr vs Zi"], value="|Z| + Phase", on_change=lambda e: select_plot_mode(e.value))
                     data_view_toggle = ui.toggle(["Plot", "Table"], value="Plot", on_change=lambda e: select_data_view(e.value)).props("unelevated")
                 data_status = ui.label("No data loaded").classes("text-sm muted-text")
 
@@ -958,8 +930,10 @@ def main_page() -> None:
                 {"name": "frequency", "label": "Frequency (Hz)", "field": "frequency", "align": "right"},
                 {"name": "impedance", "label": "Impedance (Ohm)", "field": "impedance", "align": "right"},
                 {"name": "phase", "label": "Phase (deg)", "field": "phase", "align": "right"},
-                {"name": "er", "label": "Real Permittivity", "field": "er", "align": "right"},
-                {"name": "ei", "label": "Imaginary Permittivity", "field": "ei", "align": "right"},
+                {"name": "zr", "label": "Zr (Ohm)", "field": "zr", "align": "right"},
+                {"name": "zi", "label": "Zi (Ohm)", "field": "zi", "align": "right"},
+                {"name": "resistance", "label": "R (Ohm)", "field": "resistance", "align": "right"},
+                {"name": "capacitance", "label": "C (F)", "field": "capacitance", "align": "right"},
             ]
             with ui.column().classes("data-surface w-full grow min-h-0 overflow-auto") as table_container:
                 data_table = ui.table(columns=columns, rows=[], row_key="id", pagination=0).classes("w-full")

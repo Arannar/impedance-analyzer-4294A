@@ -10,7 +10,7 @@ The goal is to provide a browser-based replacement for a Qt-style impedance spec
 - Perform open and short compensation.
 - Configure sample metadata and sweep parameters.
 - Run synchronized single sweeps.
-- Plot impedance, phase, derived dielectric values, resistance, capacitance, and Nyquist-style data.
+- Plot impedance, phase, resistance, capacitance, and Nyquist-style data.
 - Import and export impedspec-compatible `.txt` files from the browser.
 
 The user wants explicit credit to the upstream inspiration project, `giovanirech/impedspec`. Keep the README acknowledgement intact unless the user asks to rewrite it. This project should remain a clean reimplementation; do not copy GPL upstream source code, Qt UI files, or sample data into this repository.
@@ -125,11 +125,13 @@ The `HP4294A` class owns a `threading.Lock`. Keep instrument access serialized. 
 
 ### Connection
 
-The default IP address is:
+The default IP address shown in the UI is configured with:
 
 ```text
-10.59.133.242
+DEFAULT_INSTRUMENT_IP
 ```
+
+The fallback value in source should remain a generic documentation address, not a private lab address.
 
 When the user enters a plain IP address, `_resource_candidates` tries:
 
@@ -233,12 +235,9 @@ Zr = Z * cos(theta)
 Zi = -Z * sin(theta)
 R = Z / cos(theta)
 C = Zi / (Zr * freq * R * 2*pi)
-er = C * d / (e0 * A)
-ei = er * tan((90 + theta) * pi / 180)
-A = pi * D^2 / 4
 ```
 
-`theta` is phase in degrees. Diameter and thickness are entered in mm and converted to meters.
+`theta` is phase in degrees.
 
 Division-by-zero and invalid numeric cases should not crash the app. Preserve the current behavior of returning finite values or `math.nan`.
 
@@ -248,8 +247,6 @@ Exported text files use metadata comments plus tabular numeric rows. The current
 
 ```text
 #sample
-#d(mm)
-#D(mm)
 #freq_start
 #freq_stop
 #sweep
@@ -259,7 +256,7 @@ Exported text files use metadata comments plus tabular numeric rows. The current
 #point_average
 #measurements_per_point
 #notes
-#Freq(Hz)  Z(ohms)  Phase(degrees)  er_Re  er_Im
+#Freq(Hz)  Z(ohms)  Phase(degrees)  Zr(ohms)  Zi(ohms)  R(ohms)  C(F)
 ```
 
 The importer:

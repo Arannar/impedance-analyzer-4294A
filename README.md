@@ -5,7 +5,7 @@ A NiceGUI web application for controlling an HP 4294A Precision Impedance Analyz
 ## Features
 
 - Connect to the analyzer by IP address or full VISA resource string.
-- Default instrument IP address: `10.59.133.242`.
+- Default instrument IP address can be set with `DEFAULT_INSTRUMENT_IP`.
 - Thread-safe PyVISA backend using NiceGUI background workers so instrument I/O does not block the browser UI.
 - Workflow cards for:
   - Connection
@@ -22,10 +22,9 @@ A NiceGUI web application for controlling an HP 4294A Precision Impedance Analyz
 - Open and short compensation flow with an explicit skip option.
 - Plotly views:
   - `|Z| + Phase` versus frequency
-  - `Permittivity` versus frequency
   - `R + C` versus frequency
   - `Zr vs Zi` Nyquist-style plot
-- Table view with frequency, impedance, phase, real permittivity, and imaginary permittivity.
+- Table view with frequency, impedance, phase, real/imaginary impedance, resistance, and capacitance.
 - Browser-based `.txt` import and export compatible with the impedspec-style sample format.
 - Light and dark mode.
 
@@ -75,7 +74,7 @@ If port `8080` is already in use, stop the existing app process before starting 
 
 1. Start the app with `pixi run app`.
 2. Confirm the IP address in the Connection card.
-   - The default is `10.59.133.242`.
+   - The default can be set with `DEFAULT_INSTRUMENT_IP`.
    - You may also enter a full VISA resource string.
 3. Click `Connect`.
 4. Run open compensation.
@@ -83,8 +82,6 @@ If port `8080` is already in use, stop the existing app process before starting 
 6. Enter sample metadata:
    - Sample ID
    - Notes
-   - Diameter in mm
-   - Thickness in mm
 7. Enter sweep settings.
 8. Click `Run Sweep`.
 9. Review the data in Plot or Table view.
@@ -142,19 +139,14 @@ Trace A is treated as impedance magnitude. Trace B is treated as phase.
 
 ## Calculated Columns
 
-Given impedance magnitude `Z`, phase angle `theta` in degrees, frequency `freq`, sample thickness `d`, and electrode area `A`, the app computes:
+Given impedance magnitude `Z`, phase angle `theta` in degrees, and frequency `freq`, the app computes:
 
 ```text
 Zr = Z * cos(theta)
 Zi = -Z * sin(theta)
 R = Z / cos(theta)
 C = Zi / (Zr * freq * R * 2*pi)
-er = C * d / (e0 * A)
-ei = er * tan((90 + theta) * pi / 180)
-A = pi * D^2 / 4
 ```
-
-Diameter and thickness are entered in mm and converted to meters for the calculations.
 
 Invalid or singular calculations, such as division by zero, are represented as blank or `NaN` values instead of crashing the app.
 
@@ -164,8 +156,6 @@ Exported files are tab-delimited text files with metadata comments followed by n
 
 ```text
 #sample	 sample
-#d(mm)	 1.0
-#D(mm)	 1.0
 #freq_start	 40.0
 #freq_stop	 110000000.0
 #sweep	 LOG
@@ -175,8 +165,8 @@ Exported files are tab-delimited text files with metadata comments followed by n
 #point_average	 OFF
 #measurements_per_point	 4
 #notes
-#Freq(Hz)	 Z(ohms)	 Phase(degrees)	 er_Re	 er_Im
-4.000000e+01	1.000000e+03	-4.500000e+01	1.000000e+00	2.000000e+00
+#Freq(Hz)	 Z(ohms)	 Phase(degrees)	 Zr(ohms)	 Zi(ohms)	 R(ohms)	 C(F)
+4.000000e+01	1.000000e+03	-4.500000e+01	7.071068e+02	7.071068e+02	1.414214e+03	1.989437e-06
 ```
 
 The importer ignores non-numeric table header lines and reads the first three numeric columns as frequency, impedance magnitude, and phase.
@@ -242,7 +232,7 @@ pixi run app
 
 ## Ubuntu Server Deployment With Docker
 
-The app is ready to run as a container on a lab Ubuntu Server. Because the HP 4294A is controlled over LAN, the container only needs normal network access to the instrument IP address.
+The app is ready to run as a container on an Ubuntu Server. Because the HP 4294A is controlled over LAN, the container only needs normal network access to the instrument address.
 
 On the Ubuntu server, install Docker:
 
@@ -264,7 +254,7 @@ docker compose up -d --build
 Open the app from another lab computer:
 
 ```text
-http://<ubuntu-server-ip>:8080
+http://<server-ip>:8080
 ```
 
 View logs:
@@ -287,16 +277,16 @@ docker compose up -d --build
 
 ### Network Check From The Server
 
-Before blaming Docker, verify the Ubuntu server can reach the analyzer:
+Before blaming Docker, verify the Ubuntu server can reach the analyzer. Replace `<instrument-ip>` with the analyzer address used in your environment:
 
 ```bash
-ping 10.59.133.242
+ping <instrument-ip>
 ```
 
 If ICMP ping is blocked in the lab, test the common SCPI socket port instead:
 
 ```bash
-nc -vz 10.59.133.242 5025
+nc -vz <instrument-ip> 5025
 ```
 
 Install `nc` if needed:
@@ -305,7 +295,13 @@ Install `nc` if needed:
 sudo apt install -y netcat-openbsd
 ```
 
-If the server cannot reach the analyzer, fix the lab network route, VLAN, firewall, or instrument IP settings first. The app cannot connect from inside Docker until the host can connect.
+If the server cannot reach the analyzer, fix the network route, firewall, or instrument address settings first. The app cannot connect from inside Docker until the host can connect.
+
+To set the startup IP shown in the web UI, edit `docker-compose.yml` or pass an environment variable:
+
+```bash
+DEFAULT_INSTRUMENT_IP=<instrument-ip> docker compose up -d --build
+```
 
 ### Optional systemd Autostart
 
