@@ -1,0 +1,26 @@
+[project]
+dependencies = [
+    "nicegui>=2.0.0",
+    "numpy>=2.0.0",
+    "plotly>=5.0.0",
+    "pyvisa>=1.14.0",
+    "pyvisa-py>=0.7.0",
+]
+name = "impedance-analyzer"
+requires-python = ">= 3.11"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tool.pixi.pypi-dependencies]
+impedance_analyzer = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+app = "python -m impedance_analyzer.app"
+test = "python -m unittest discover -s tests"

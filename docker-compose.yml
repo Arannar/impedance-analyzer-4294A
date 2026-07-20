@@ -1,0 +1,10 @@
+services:
+  impedance-analyzer:
+    build: .
+    container_name: impedance-analyzer
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8080
+    ports:
+      - "8080:8080"
