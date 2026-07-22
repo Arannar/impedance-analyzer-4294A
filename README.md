@@ -317,7 +317,7 @@ Add the following site block to `/etc/caddy/Caddyfile`. The explicit `http://` s
 http://labdesktop.clients.net.dtu.dk {
     redir /impedance-analyzer /impedance-analyzer/ 308
 
-    handle /impedance-analyzer/* {
+    handle_path /impedance-analyzer/* {
         reverse_proxy 127.0.0.1:18080
     }
 
@@ -325,7 +325,7 @@ http://labdesktop.clients.net.dtu.dk {
 }
 ```
 
-Use `handle`, not `handle_path`: NiceGUI is configured with the same root path and must receive requests with the `/impedance-analyzer` prefix intact. Caddy's reverse proxy handles WebSocket upgrades automatically, so no separate WebSocket route is required.
+Use `handle_path` so Caddy removes `/impedance-analyzer` from the upstream request path. Uvicorn receives the same prefix through its `root_path` setting, which NiceGUI uses when generating browser-facing asset and WebSocket URLs. Caddy's reverse proxy handles WebSocket upgrades automatically, so no separate WebSocket route is required.
 
 Build the container, validate the Caddy configuration, and reload Caddy:
 
