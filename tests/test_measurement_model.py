@@ -7,12 +7,25 @@ from impedance_analyzer.app import (
     build_measurement,
     export_filename,
     format_impedspec_text,
+    normalize_root_path,
     parse_impedspec_text,
     read_uploaded_content,
 )
 
 
 class MeasurementModelTests(unittest.TestCase):
+    def test_normalize_root_path(self) -> None:
+        self.assertEqual(normalize_root_path(None), "")
+        self.assertEqual(normalize_root_path(""), "")
+        self.assertEqual(normalize_root_path("impedance-analyzer"), "/impedance-analyzer")
+        self.assertEqual(normalize_root_path("/impedance-analyzer"), "/impedance-analyzer")
+        self.assertEqual(normalize_root_path("/impedance-analyzer/"), "/impedance-analyzer")
+
+    def test_normalize_root_path_rejects_malformed_paths(self) -> None:
+        for value in ("/impedance//analyzer", r"\impedance-analyzer", "/../impedance-analyzer"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                normalize_root_path(value)
+
     def test_build_measurement_calculates_derived_columns(self) -> None:
         measurement = build_measurement(
             SampleInfo(sample_id="rc"),

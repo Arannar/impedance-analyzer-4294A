@@ -17,8 +17,23 @@ from nicegui import run, ui
 from nicegui.events import UploadEventArguments
 
 
-DEFAULT_IP = os.environ.get("DEFAULT_INSTRUMENT_IP", "192.0.2.10")
+DEFAULT_IP = os.environ.get("DEFAULT_INSTRUMENT_IP", "10.59.133.242")
 favicon_path = Path(__file__).with_name("favicon.ico")
+
+
+def normalize_root_path(value: str | None) -> str:
+    """Return an ASGI root path in canonical form."""
+    root_path = (value or "").strip()
+    if not root_path or root_path == "/":
+        return ""
+    if not root_path.startswith("/"):
+        root_path = f"/{root_path}"
+    root_path = root_path.rstrip("/")
+    if "//" in root_path or "\\" in root_path or "?" in root_path or "#" in root_path:
+        raise ValueError(f"Invalid ROOT_PATH: {value!r}")
+    if any(segment in {".", ".."} for segment in root_path.split("/")):
+        raise ValueError(f"Invalid ROOT_PATH: {value!r}")
+    return root_path
 
 
 def _strip_ieee_block(payload: bytes) -> bytes:
@@ -943,7 +958,16 @@ def main_page() -> None:
 def main() -> None:
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "8080"))
-    ui.run(title="HP 4294A Interface", host=host, port=port, reload=False, favicon=favicon_path, dark=False)
+    root_path = normalize_root_path(os.environ.get("ROOT_PATH"))
+    ui.run(
+        title="HP 4294A Interface",
+        host=host,
+        port=port,
+        reload=False,
+        favicon=favicon_path,
+        dark=False,
+        root_path=root_path,
+    )
 
 
 if __name__ in {"__main__", "__mp_main__"}:

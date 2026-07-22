@@ -4,8 +4,9 @@ services:
     container_name: impedance-analyzer
     restart: unless-stopped
     environment:
-      DEFAULT_INSTRUMENT_IP: ${DEFAULT_INSTRUMENT_IP:-192.0.2.10}
+      DEFAULT_INSTRUMENT_IP: ${DEFAULT_INSTRUMENT_IP:-10.59.133.242}
       HOST: 0.0.0.0
       PORT: 8080
+      ROOT_PATH: ${ROOT_PATH:-/impedance-analyzer}
     ports:
-      - "8080:8080"
+      - "18080:8080"

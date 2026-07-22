@@ -254,7 +254,7 @@ docker compose up -d --build
 Open the app from another lab computer:
 
 ```text
-http://<server-ip>:8080
+http://<server-ip>:18080
 ```
 
 View logs:
@@ -302,6 +302,42 @@ To set the startup IP shown in the web UI, edit `docker-compose.yml` or pass an 
 ```bash
 DEFAULT_INSTRUMENT_IP=<instrument-ip> docker compose up -d --build
 ```
+
+### Caddy Reverse Proxy Under A Subpath
+
+The Compose deployment sets `ROOT_PATH=/impedance-analyzer` by default, so the supported browser URL behind Caddy is:
+
+```text
+http://labdesktop.clients.net.dtu.dk/impedance-analyzer/
+```
+
+Add the following site block to `/etc/caddy/Caddyfile`. The explicit `http://` scheme keeps this deployment on HTTP and prevents Caddy from attempting automatic HTTPS certificate provisioning:
+
+```caddyfile
+http://labdesktop.clients.net.dtu.dk {
+    redir /impedance-analyzer /impedance-analyzer/ 308
+
+    handle /impedance-analyzer/* {
+        reverse_proxy 127.0.0.1:18080
+    }
+
+    # Keep handlers for other applications here.
+}
+```
+
+Use `handle`, not `handle_path`: NiceGUI is configured with the same root path and must receive requests with the `/impedance-analyzer` prefix intact. Caddy's reverse proxy handles WebSocket upgrades automatically, so no separate WebSocket route is required.
+
+Build the container, validate the Caddy configuration, and reload Caddy:
+
+```bash
+docker compose up -d --build
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+The published port `18080` remains useful for diagnostics, but the Caddy subpath is the supported browser entry point for this deployment. To use a different Compose root path, set `ROOT_PATH` before starting the container. Running `pixi run app` without `ROOT_PATH` remains backward-compatible and serves the app at `http://localhost:8080/`.
+
+This lab deployment uses unencrypted HTTP. Requests, uploaded measurement files, and browser traffic are not protected by TLS while travelling over the network.
 
 ### Optional systemd Autostart
 
