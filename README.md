@@ -327,6 +327,8 @@ http://labdesktop.clients.net.dtu.dk {
 
 Use `handle_path` so Caddy removes `/impedance-analyzer` from the upstream request path. Uvicorn receives the same prefix through its `root_path` setting, which NiceGUI uses when generating browser-facing asset and WebSocket URLs. Caddy's reverse proxy handles WebSocket upgrades automatically, so no separate WebSocket route is required.
 
+The app exposes `GET /healthz` for service availability checks. Behind Caddy this is available at `/impedance-analyzer/healthz`; it reports only that the web process is responding and does not indicate whether the physical analyzer is connected.
+
 Build the container, validate the Caddy configuration, and reload Caddy:
 
 ```bash

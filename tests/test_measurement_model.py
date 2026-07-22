@@ -7,6 +7,7 @@ from impedance_analyzer.app import (
     build_measurement,
     export_filename,
     format_impedspec_text,
+    healthz,
     normalize_root_path,
     parse_impedspec_text,
     read_uploaded_content,
@@ -14,6 +15,9 @@ from impedance_analyzer.app import (
 
 
 class MeasurementModelTests(unittest.TestCase):
+    def test_healthz_reports_web_service_readiness(self) -> None:
+        self.assertEqual(healthz(), {"status": "ok", "service": "impedance-analyzer"})
+
     def test_normalize_root_path(self) -> None:
         self.assertEqual(normalize_root_path(None), "")
         self.assertEqual(normalize_root_path(""), "")

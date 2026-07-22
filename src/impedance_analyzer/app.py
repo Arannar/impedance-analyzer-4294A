@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import plotly.graph_objects as go
 import pyvisa as visa
-from nicegui import run, ui
+from nicegui import app, run, ui
 from nicegui.events import UploadEventArguments
 
 
@@ -490,6 +490,12 @@ class _InstrumentContext:
 
 analyzer = HP4294A()
 current_measurement = Measurement()
+
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    """Report web-service readiness without accessing the instrument."""
+    return {"status": "ok", "service": "impedance-analyzer"}
 
 
 def _dual_axis_figure(
