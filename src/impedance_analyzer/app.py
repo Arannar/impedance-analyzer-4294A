@@ -359,7 +359,7 @@ class HP4294A:
                         self._rm = rm
                         self._instrument = instrument
                         return identity
-                    except visa.VisaIOError as exc:
+                    except (visa.VisaIOError, OSError) as exc:
                         errors.append(f"{backend or 'default backend'} {resource}: {exc}")
 
             raise RuntimeError("Could not open analyzer. Tried:\n" + "\n".join(errors[-8:]))
