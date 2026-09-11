@@ -151,6 +151,10 @@ class Measurement:
     zi_ohm: list[float] = field(default_factory=list)
     resistance_ohm: list[float] = field(default_factory=list)
     capacitance_f: list[float] = field(default_factory=list)
+    series_capacitance_f: list[float] = field(default_factory=list)
+    series_resistance_ohm: list[float] = field(default_factory=list)
+    series_inductance_h: list[float] = field(default_factory=list)
+    quality_factor: list[float] = field(default_factory=list)
     elapsed_s: float | None = None
 
     @property
@@ -181,6 +185,11 @@ def build_measurement(
         zi = -impedance * np.sin(phase_rad)
         resistance = impedance / np.cos(phase_rad)
         capacitance = zi / (zr * freq * resistance * 2 * math.pi)
+        # zi uses the existing Nyquist convention: zi = -Im(Z).
+        series_capacitance = 1 / (2 * math.pi * freq * zi)
+        series_inductance = -zi / (2 * math.pi * freq)
+        # Dimensionless Q = |reactance| / series resistance.
+        quality_factor = np.abs(zi) / zr
 
     return Measurement(
         sample=sample,
@@ -192,6 +201,10 @@ def build_measurement(
         zi_ohm=_safe_list(zi),
         resistance_ohm=_safe_list(resistance),
         capacitance_f=_safe_list(capacitance),
+        series_capacitance_f=_safe_list(series_capacitance),
+        series_resistance_ohm=_safe_list(zr),
+        series_inductance_h=_safe_list(series_inductance),
+        quality_factor=_safe_list(quality_factor),
         elapsed_s=elapsed_s,
     )
 
@@ -289,7 +302,7 @@ def format_impedspec_text(measurement: Measurement) -> str:
         f"#measurements_per_point\t {settings.measurements_per_point}",
         f"#notes\t {sample.notes}",
         f"#time_of_analysis\t {elapsed}",
-        "#Freq(Hz)\t Z(ohms)\t Phase(degrees)\t Zr(ohms)\t Zi(ohms)\t R(ohms)\t C(F)",
+        "#Freq(Hz)\t Z(ohms)\t Phase(degrees)\t Zr(ohms)\t Zi(ohms)\t R(ohms)\t C(F)\t Cs(F)\t Rs(ohms)\t Ls(H)\t Q",
     ]
     for row in zip(
         measurement.frequency_hz,
@@ -299,6 +312,10 @@ def format_impedspec_text(measurement: Measurement) -> str:
         measurement.zi_ohm,
         measurement.resistance_ohm,
         measurement.capacitance_f,
+        measurement.series_capacitance_f,
+        measurement.series_resistance_ohm,
+        measurement.series_inductance_h,
+        measurement.quality_factor,
         strict=False,
     ):
         lines.append("\t".join(f"{value:.4e}" for value in row))
@@ -519,23 +536,29 @@ def _dual_axis_figure(
         yaxis=dict(title=y1_title, type="log" if y1_log else "linear", showgrid=True),
         yaxis2=dict(title=y2_title, type="log" if y2_log else "linear", overlaying="y", side="right", showgrid=False),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        hovermode="x unified",
     )
     return fig
 
 
+PLOT_MODES = ["|Z| + θ", "Cs + Rs", "Ls + Rs", "Ls + Q", "Zᵣ vs Zᵢ"]
+
+
 def figure_for(measurement: Measurement, mode: str) -> go.Figure:
-    if not measurement.has_data:
-        return _dual_axis_figure(measurement, [], "|Z|", "Impedance (Ohm)", [], "Phase", "Phase (deg)", y1_log=True)
-    if mode == "R + C":
-        return _dual_axis_figure(measurement, measurement.resistance_ohm, "R", "Resistance (Ohm)", measurement.capacitance_f, "C", "Capacitance (F)", y1_log=True, y2_log=True)
-    if mode == "Zr vs Zi":
+    if mode == "Cs + Rs":
+        return _dual_axis_figure(measurement, measurement.series_capacitance_f, "Cs", "Series capacitance (F)", measurement.series_resistance_ohm, "Rs", "Series resistance (Ohm)")
+    if mode == "Ls + Rs":
+        return _dual_axis_figure(measurement, measurement.series_inductance_h, "Ls", "Series inductance (H)", measurement.series_resistance_ohm, "Rs", "Series resistance (Ohm)")
+    if mode == "Ls + Q":
+        return _dual_axis_figure(measurement, measurement.series_inductance_h, "Ls", "Series inductance (H)", measurement.quality_factor, "Q", "Quality factor Q")
+    if mode == "Zᵣ vs Zᵢ":
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=measurement.zr_ohm, y=measurement.zi_ohm, name="Zr/Zi", mode="lines+markers"))
         fig.update_layout(
             margin=dict(l=72, r=32, t=28, b=56),
             template="plotly_white",
             xaxis=dict(title="Real Impedance (Ohm)", showgrid=True),
-            yaxis=dict(title="Imaginary Impedance (Ohm)", showgrid=True),
+            yaxis=dict(title="−Im(Z) (Ohm)", showgrid=True),
         )
         return fig
     return _dual_axis_figure(
@@ -561,10 +584,14 @@ def table_rows(measurement: Measurement) -> list[dict[str, str]]:
             measurement.zi_ohm,
             measurement.resistance_ohm,
             measurement.capacitance_f,
+            measurement.series_capacitance_f,
+            measurement.series_resistance_ohm,
+            measurement.series_inductance_h,
+            measurement.quality_factor,
             strict=False,
         )
     ):
-        freq, impedance, phase, zr, zi, resistance, capacitance = values
+        freq, impedance, phase, zr, zi, resistance, capacitance, cs, rs, ls, quality = values
         rows.append(
             {
                 "id": str(index),
@@ -575,6 +602,10 @@ def table_rows(measurement: Measurement) -> list[dict[str, str]]:
                 "zi": f"{zi:.6g}",
                 "resistance": f"{resistance:.6g}",
                 "capacitance": f"{capacitance:.6g}",
+                "cs": f"{cs:.6g}",
+                "rs": f"{rs:.6g}",
+                "ls": f"{ls:.6g}",
+                "q": f"{quality:.6g}",
             }
         )
     return rows
@@ -592,7 +623,7 @@ async def confirm_dialog(title: str, message: str, positive: str = "Continue") -
 
 @ui.page("/")
 def main_page() -> None:
-    state = {"connected": False, "calibrated": False, "plot_mode": "|Z| + Phase", "data_view": "Plot"}
+    state = {"connected": False, "calibrated": False, "plot_mode": PLOT_MODES[0], "data_view": "Plot"}
 
     ui.add_head_html(
         """
@@ -940,7 +971,7 @@ def main_page() -> None:
         with ui.column().classes("main-panel grow h-full p-4 gap-3 overflow-hidden"):
             with ui.row().classes("top-toolbar w-full items-center justify-between gap-3"):
                 with ui.row().classes("items-center gap-2"):
-                    plot_mode = ui.toggle(["|Z| + Phase", "R + C", "Zr vs Zi"], value="|Z| + Phase", on_change=lambda e: select_plot_mode(e.value))
+                    plot_mode = ui.toggle(PLOT_MODES, value=PLOT_MODES[0], on_change=lambda e: select_plot_mode(e.value))
                     data_view_toggle = ui.toggle(["Plot", "Table"], value="Plot", on_change=lambda e: select_data_view(e.value)).props("unelevated")
                 data_status = ui.label("No data loaded").classes("text-sm muted-text")
 
@@ -953,8 +984,12 @@ def main_page() -> None:
                 {"name": "phase", "label": "Phase (deg)", "field": "phase", "align": "right"},
                 {"name": "zr", "label": "Zr (Ohm)", "field": "zr", "align": "right"},
                 {"name": "zi", "label": "Zi (Ohm)", "field": "zi", "align": "right"},
-                {"name": "resistance", "label": "R (Ohm)", "field": "resistance", "align": "right"},
-                {"name": "capacitance", "label": "C (F)", "field": "capacitance", "align": "right"},
+                {"name": "cs", "label": "Cs (F)", "field": "cs", "align": "right"},
+                {"name": "rs", "label": "Rs (Ohm)", "field": "rs", "align": "right"},
+                {"name": "ls", "label": "Ls (H)", "field": "ls", "align": "right"},
+                {"name": "q", "label": "Q", "field": "q", "align": "right"},
+                {"name": "resistance", "label": "Rp (Ohm)", "field": "resistance", "align": "right"},
+                {"name": "capacitance", "label": "Cp (F)", "field": "capacitance", "align": "right"},
             ]
             with ui.column().classes("data-surface w-full grow min-h-0 overflow-auto") as table_container:
                 data_table = ui.table(columns=columns, rows=[], row_key="id", pagination=0).classes("w-full")

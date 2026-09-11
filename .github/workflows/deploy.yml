@@ -1,0 +1,40 @@
+name: Deploy lab image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: lab-deployment
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: |
+          docker build --pull \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            -t lab-image .
+      - name: Test the built image
+        run: |
+          docker run --rm -v "$PWD/tests:/app/tests:ro" lab-image \
+            python -m unittest discover -s tests
+      - name: Publish tested image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag lab-image "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker tag lab-image "$IMAGE:lab"
+          docker push "$IMAGE:lab"
+          echo "Published $IMAGE:sha-$GITHUB_SHA; Ubuntu will pick up the lab tag on its next timer check." >> "$GITHUB_STEP_SUMMARY"
