@@ -81,7 +81,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory="$DEPLOY_DIR"
+WorkingDirectory=$DEPLOY_DIR
 ExecStart=/bin/bash "$DEPLOY_DIR/scripts/update-lab.sh"
 TimeoutStartSec=15min
 EOF
